@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Display</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+<style>
+  @import url("https://fonts.googleapis.com/css2?family=Audiowide&display=swap");
+    .rating-container {
+        font-family: "Audiowide", sans-serif;
+        color: white;
+        border-radius: 50px;
+        padding: 10px 20px;
+        display: inline-flex;
+        opacity: 0;
+        transform: scale(0);
+        transition: opacity 0.5s, transform 1.5s;
+        flex-direction: column; /* Ensure children are inline */
+        justify-content: start; /* Align children to the start of the container */
+        background: radial-gradient(circle, #0A2540, #000000);
+        box-shadow: 0 0 0 10px #0A2540, 0 4px 8px rgba(0, 0, 0, 0.2), 0 6px 20px rgba(0, 0, 0, 0.19);       
+        border: 5px solid #658c9a;
+        width: 1000px;
+        margin: 10px;
+    }
+    .rating-container.visible {
+          opacity: 1;
+          transform: scale(1);
+      }
+
+    .rating-text {
+      text-transform: uppercase;
+      font-weight: 900;
+      padding-left:10px;
+      margin-right: 10px;
+      font-size: 3em;
+      margin-bottom: 5px;
+      color: #00dfb1;
+      text-shadow: 2px 2px 4px rgba(0, 255, 236, 0.75);
+    }
+    .stars {
+      order: 1;
+      margin: 0 5px;
+      color: #DFB100; /* Star color */
+      font-size: 12em;
+      text-shadow: 2px 2px 4px rgba(223, 177, 0, 0.5);
+      padding-left: -100px;
+      text-align: center;
+    }
+    .rating-value {
+      order: 2;
+      font-size: 6em;
+      text-align: center;
+      text-shadow: 4px 4px 4px rgba(223, 177, 0, 0.5);
+      text-align: center;
+
+    }
+</style>
+</head>
+<body>
+  <div class="rating-container">
+    <div class="rating-text" id="item"></div>
+    <div class="stars" id="rating"></div>
+    <div class="rating-value" id="rating-value"></div>
+  </div>
+  <script>
+    var socket = io();
+    function updateStarsDisplay(value, displayElement) {
+      const fullStars = Math.floor(value);
+      const partialStarPercentage = (value - fullStars) * 100;
+      let starsHTML = '';
+      for (let i = 0; i < fullStars; i++) {
+          starsHTML += '<i class="fas fa-star"></i>';
+      }
+      if (partialStarPercentage > 0) {
+          starsHTML += `<i class="fas fa-star" style="clip-path: inset(0 ${100 - partialStarPercentage}% 0 0);"></i>`;
+      }
+      for (let i = fullStars + (partialStarPercentage > 0 ? 1 : 0); i < 4; i++) {
+          starsHTML += '<i class="far fa-star"></i>';
+      }
+      displayElement.innerHTML = starsHTML;
+    }
+    function updateRatingNumber(value) {
+      const ratingDisplay = parseFloat(value).toFixed(4);
+      const ratingValue = document.getElementById('rating-value');
+      ratingValue.textContent = ratingDisplay;
+    }
+    socket.on('rating show', function(data) {
+      console.log('rating show', data)
+      const ratingContainer = document.querySelector('.rating-container');
+      ratingContainer.style.display = 'inline-flex';
+      setTimeout(() => ratingContainer.classList.add('visible'), 0);
+      document.getElementById('item').textContent = data.item;
+      updateStarsDisplay(data.rating, document.getElementById('rating'));
+      updateRatingNumber(data.rating);
+    });
+
+    socket.on('rating hide', function() {
+      const ratingContainer = document.querySelector('.rating-container');
+      ratingContainer.classList.remove('visible');
+      setTimeout(() => ratingContainer.style.display = 'none', 500);
+    });
+    socket.on('rating submit', function(data) {
+      document.getElementById('item').textContent = data.item;
+      updateStarsDisplay(data.rating, document.getElementById('rating'));
+      updateRatingNumber(data.rating);
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,239 @@
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-rbsA2VBKQhggwzxH7pPCaAqO46MgnOM80zW1RWuH61DGLwZJEdK2Kadq2F9CUG65" crossorigin="anonymous">
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-kenU1KFdBIe4zVF0s0G1M5b4hcpxyD9F7jL+jjXkk+Q2h455rYXK/7HAuoJl+0I4" crossorigin="anonymous"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/croppie/2.6.5/croppie.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/croppie/2.6.5/croppie.min.js"></script>
+<style>
+#screenshot-container .cr-boundary {
+  margin: 0 !important;
+}
+</style>
+<div class="container mt-5">
+  <form id="rating-form" class="mb-3">
+<div class="mb-3">
+<div class="accordion" id="screenshot-accordion">
+  <div class="accordion-item">
+    <h2 class="accordion-header" id="screenshot-heading">
+      <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#screenshot-collapse" aria-expanded="false" aria-controls="screenshot-collapse">
+        Screenshot to OpenAI Vision 
+      </button>
+    </h2>
+    <div id="screenshot-collapse" class="accordion-collapse collapse" aria-labelledby="screenshot-heading" data-bs-parent="#screenshot-accordion">
+      <div class="accordion-body">
+        <p>Start by capturing you camera screen (obs or streamlabs will work fine). Then you can takes screenshot from that. Crop it down to just the item in your hands and send it to the server and it'll try and identify the item as per the prompt below.</p>
+        <button type="button" id="start-capture" class="btn btn-secondary">Start Capture</button>
+        <button type="button" id="stop-capture" class="btn btn-danger d-none">Stop Capture</button>
+        <button type="button" id="capture-screenshot" class="btn btn-info d-none">📷 Take Screenshot</button>
+        <button type="button" id="send-to-server" class="btn btn-success d-none">Send to Server</button>
+        <button type="button" id="crop-screenshot" class="btn btn-primary d-none">✂️ Crop Screenshot</button>
+        <input type="hidden" id="screenshot" name="screenshot">
+        <video id="screenshot-video" class="mt-3 d-none" style="max-width: 100%;" autoplay></video>
+        <img id="screenshot-preview" class="mt-3 d-block" style="max-width: 100%;">
+        <div id="screenshot-container"></div>
+      </div>
+      <div class="mb-3">
+        <label for="prompt" class="form-label">Prompt:</label>
+        <textarea id="prompt" name="prompt" class="form-control" required>Your job is to identify the title of item is being held in the photo. Fewest words wins.</textarea>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="loading-spinner" class="spinner-border text-primary" role="status" style="display: none;">
+  <span class="sr-only">Loading...</span>
+</div>
+    <div class="mb-3">
+      <label for="item" class="form-label">What are you rating?:</label>
+      <input type="text" id="item" name="item" class="form-control" required>
+    </div>
+
+    <div class="mb-3">
+      <label for="rating" class="form-label">Rating:</label>
+      <input type="range" id="rating" name="rating" min="0" max="4" step="0.0001" class="form-range" required>
+    </div>
+    <div class="mb-3">
+      <label for="rating-precise" class="form-label">Percise Rating:</label>
+      <input type="number" id="rating-precise" name="rating-precise" min="0" max="4" step="0.25" class="form-control" required>
+    </div>
+    <div class="mb-3">
+      <button type="button" id="hide-rating" class="btn btn-secondary me-2">Hide Rating</button>
+      <input type="submit" value="Submit" class="btn btn-primary">
+    </div>
+  </form>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+  var croppie = null;
+  var previousCrop = null;
+  const screenshotContainer = document.getElementById('screenshot-container');
+  var socket = io();
+
+document.getElementById('rating').addEventListener('input', function() {
+  var item = document.getElementById('item').value;
+  var rating = document.getElementById('rating').value;
+  document.getElementById('rating-precise').value = rating;
+  socket.emit('rating show', { item: item, rating: rating });
+});
+
+document.getElementById('rating-precise').addEventListener('input', function() {
+  var item = document.getElementById('item').value;
+  var rating = document.getElementById('rating-precise').value;
+    // Ensure the rating is within the range 0-4
+  if (rating < 0) {
+    rating = 0;
+    document.getElementById('rating-precise').value = rating;
+  } else if (rating > 4) {
+    rating = 4;
+    document.getElementById('rating-precise').value = rating;
+  }
+  document.getElementById('rating').value = rating;
+  socket.emit('rating show', { item: item, rating: rating });
+});
+
+  document.getElementById('rating-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+
+    var item = document.getElementById('item').value;
+    var rating = document.getElementById('rating').value;
+
+    socket.emit('rating submit', { item: item, rating: rating });
+  });
+  document.getElementById('hide-rating').addEventListener('click', function() {
+    socket.emit('rating hide');
+  });
+document.getElementById('start-capture').addEventListener('click', async function() {
+  try {
+    const video = document.getElementById('screenshot-video');
+      video.classList.remove('d-none'); // Show the video
+    video.classList.add('d-block'); // Show the video
+    const captureStream = await navigator.mediaDevices.getDisplayMedia();
+    video.srcObject = captureStream;
+    video.play(); // Explicitly play the video
+
+    // Show the 'Capture Screenshot' and 'Stop Capture' buttons, hide the 'Start Capture' button
+    document.getElementById('capture-screenshot').classList.remove('d-none');
+    document.getElementById('stop-capture').classList.remove('d-none');
+    document.getElementById('start-capture').classList.add('d-none');
+  } catch (err) {
+    console.error("Error: " + err);
+  }
+});
+
+document.getElementById('stop-capture').addEventListener('click', function() {
+  const video = document.getElementById('screenshot-video');
+  video.srcObject.getTracks().forEach(track => track.stop());
+  video.classList.remove('d-block'); // Hide the video
+  video.classList.add('d-none'); // Hide the video
+  // Show the 'Start Capture' button, hide the 'Capture Screenshot' and 'Stop Capture' buttons
+  document.getElementById('start-capture').classList.remove('d-none');
+  document.getElementById('capture-screenshot').classList.add('d-none');
+  document.getElementById('stop-capture').classList.add('d-none');
+});
+
+document.getElementById('capture-screenshot').addEventListener('click', function() {
+  const video = document.getElementById('screenshot-video');
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  // Set the canvas dimensions to match the video's dimensions
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+
+  // Draw the video frame to the canvas, scaling it to fit the canvas
+  context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight, 0, 0, canvas.width, canvas.height)
+  // Convert the canvas to a data URL
+  const dataUrl = canvas.toDataURL('image/png');
+  video.classList.remove('d-block'); // Hide the video
+  video.classList.add('d-none'); // Hide the video
+  // Hide the previous screenshot if it exists
+  var screenshotPreview = document.getElementById('screenshot-preview');
+  if (screenshotPreview) {
+    screenshotPreview.style.display = 'none';
+  }
+  const screenshotContainer = document.getElementById('screenshot-container');
+  // Hide the previous screenshot if it exists
+  var screenshotPreview = document.getElementById('screenshot-preview');
+  if (screenshotPreview) {
+    screenshotPreview.classList.add('d-none');
+    screenshotPreview.classList.remove('d-block');
+  }
+  // Destroy the previous instance of Croppie if it exists and the screenshotContainer is still in the document
+  if (croppie && document.body.contains(screenshotContainer)) {
+    croppie.destroy();
+  }
+
+  croppie = new Croppie(screenshotContainer, {
+    viewport: { width: 512, height: 512 },
+    boundary: { width: 512, height: 512 },
+  });
+
+  croppie.bind({
+    url: dataUrl,
+    points: previousCrop ? previousCrop.points : [77,469,280,739],
+    zoom: previousCrop ? previousCrop.zoom : 0,
+  }).then(function() {
+      croppie.setZoom(previousCrop ? previousCrop.zoom : 0)
+    // Show the 'Crop Screenshot' button
+    document.getElementById('crop-screenshot').classList.remove('d-none');
+  });
+});
+document.getElementById('crop-screenshot').addEventListener('click', function() {
+  if (croppie) {
+    croppie.result('base64').then(function(base64) {
+      document.getElementById('screenshot').value = base64;
+      document.getElementById('screenshot-preview').src = base64;
+
+      // Save the previous crop area and size
+      previousCrop = croppie.get();
+
+      // Destroy the Croppie instance if the screenshotContainer is still in the document
+      if (croppie && document.body.contains(screenshotContainer)) {
+        croppie.destroy();
+      }
+      // Show the previous screenshot if it exists
+      var screenshotPreview = document.getElementById('screenshot-preview');
+      if (screenshotPreview) {
+        screenshotPreview.classList.add('d-block');
+        screenshotPreview.classList.remove('d-none');
+      }
+      // Hide the Croppie canvas and the 'Crop Screenshot' button
+      document.getElementById('screenshot-container').innerHTML = '';
+      document.getElementById('crop-screenshot').classList.add('d-none');
+
+      // Show the 'Send to Server' button
+      document.getElementById('send-to-server').classList.remove('d-none');
+
+      // Reset croppie
+      croppie = null;
+    });
+  }
+});
+document.getElementById('send-to-server').addEventListener('click', function() {
+  const frame = document.getElementById('screenshot').value;
+  const prompt = document.getElementById('prompt').value;
+
+  // Show the loading spinner
+  document.getElementById('loading-spinner').style.display = 'block';
+  fetch('/api/process-image', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ image: frame, prompt: prompt })
+  })
+  .then(function(response) {
+    // Hide the loading spinner
+    document.getElementById('loading-spinner').style.display = 'none';
+
+    // Return the response data
+    return response.json();
+  })
+  .then(data => {
+    // Strip out any punctuation at the end of the message
+    data = data.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]+$/g,"");
+    document.getElementById('item').value = data;
+    console.log(data);
+  })
+  .catch(error => {
+    console.error('Error:', error);
+  });
+});
+</script>
